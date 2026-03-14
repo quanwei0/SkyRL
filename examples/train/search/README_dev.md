@@ -7,4 +7,6 @@ bash examples/train/search/download_index.sh
 
 bash examples/train/search/setup_search.sh
 bash examples/train/search/process_dataset.sh
+
+bash examples/train/search/run_search_grpo.sh
 ```

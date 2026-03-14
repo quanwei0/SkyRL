@@ -22,7 +22,7 @@ TIS_TYPE=token
 TIS_IMP_RATIO_CAP=2.0
 
 MODEL_PATH="Qwen/Qwen2.5-3B-Instruct"
-NUM_GPUS=4
+NUM_GPUS=8
 
 uv run --isolated --frozen --extra fsdp -m skyrl.train.entrypoints.main_base \
   data.train_data="['${DATA_DIR}/train.parquet']" \

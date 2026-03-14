@@ -14,3 +14,5 @@ conda install faiss-gpu==1.8.0 -c pytorch -c nvidia -y
 
 # Install the API service framework
 pip install uvicorn fastapi
+
+conda deactivate
