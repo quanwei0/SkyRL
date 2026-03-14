@@ -28,7 +28,6 @@ uv run --isolated --frozen --extra fsdp -m skyrl.train.entrypoints.main_base \
   data.train_data="['${DATA_DIR}/train.parquet']" \
   data.val_data="['${DATA_DIR}/validation.parquet']" \
   trainer.algorithm.advantage_estimator="grpo" \
-  trainer.algorithm.policy_loss_type="gspo" \
   trainer.policy.optimizer_config.lr=1.0e-6 \
   trainer.policy.optimizer_config.max_grad_norm=0.5 \
   trainer.policy.optimizer_config.num_warmup_steps=94 \
