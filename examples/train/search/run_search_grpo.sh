@@ -42,7 +42,7 @@ uv run --isolated --frozen --extra fsdp -m skyrl.train.entrypoints.main_base \
   trainer.ref.fsdp_config.cpu_offload=true \
   trainer.placement.policy_num_gpus_per_node=$NUM_GPUS \
   trainer.placement.ref_num_gpus_per_node=$NUM_GPUS \
-  generator.inference_engine.num_engines=$((NUM_GPUS / 2)) \
+  generator.inference_engine.num_engines=2 \
   generator.inference_engine.tensor_parallel_size=2 \
   generator.inference_engine.backend=vllm \
   generator.inference_engine.run_engines_locally=true \
