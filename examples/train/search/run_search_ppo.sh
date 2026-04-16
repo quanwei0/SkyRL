@@ -120,7 +120,7 @@ uv run --isolated --frozen --extra fsdp -m skyrl.train.entrypoints.main_base \
   generator.batched=false \
   $MULTI_TURN_ARGS \
   $STEP_WISE_ARGS \
-  generator.n_samples_per_prompt=5 \
+  generator.n_samples_per_prompt=1 \
   generator.max_turns=4 \
   generator.sampling_params.temperature=1.0 \
   generator.sampling_params.top_p=1.0 \
