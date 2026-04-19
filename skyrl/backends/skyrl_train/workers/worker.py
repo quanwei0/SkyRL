@@ -1110,7 +1110,9 @@ class CriticWorkerBase(Worker):
 
         status = {
             "critic_loss": loss.item(),
-            "values_mean": masked_mean(values, loss_mask).item(),
+            "values_mean": masked_mean(
+                values if values.dim() == 2 else values.sum(dim=-1), loss_mask
+            ).item(),
             "values_clipfrac": clipfrac,
             "critic_lr": self.scheduler.get_last_lr()[0],
         }

@@ -486,7 +486,8 @@ def _get_critic_model(
             setattr(self, self.base_model_prefix, base_llm_model(config))
 
             self.value_head_prefix = value_head_prefix
-            setattr(self, value_head_prefix, nn.Linear(config.hidden_size, 1, bias=False))
+            n_value_heads = getattr(config, "n_value_heads", 1)
+            setattr(self, value_head_prefix, nn.Linear(config.hidden_size, n_value_heads, bias=False))
 
             self.sequence_parallel_size = sequence_parallel_size
             self.use_sample_packing = use_sample_packing
@@ -560,10 +561,13 @@ def _get_critic_model(
             if self.use_sample_packing:
                 # add padding back - postprocess logits to be compatible with original tensors
                 batch_size, seqlen = attention_mask.shape
-                # (1, nnz, 1) -> (nnz, 1) -> (batch_size, seqlen, 1)
+                # (1, nnz, n_value_heads) -> (nnz, n_value_heads) -> (batch_size, seqlen, n_value_heads)
                 values_BSH = pad_input(values_BSH.squeeze(0), indices=nnz_indices, batch=batch_size, seqlen=seqlen)
 
-            values = values_BSH.squeeze(-1)[:, :-1]
+            # squeeze last dim only when n_value_heads == 1 for backward compatibility
+            values = values_BSH[:, :-1]
+            if values.shape[-1] == 1:
+                values = values.squeeze(-1)
 
             if num_actions is None:
                 assert return_output
@@ -616,6 +620,10 @@ def get_llm_for_sequence_regression(
     assert model_type == "critic", f"Only model_type critic is supported, got: {model_type}."
 
     config = AutoConfig.from_pretrained(model_name_or_path, trust_remote_code=True, **model_config_kwargs)
+    # HF's from_pretrained silently drops kwargs whose keys aren't already attributes of the config
+    # class (e.g. n_value_heads on Qwen2Config). Re-apply them so custom fields reach CriticModel.
+    for k, v in model_config_kwargs.items():
+        setattr(config, k, v)
     config._attn_implementation = "flash_attention_2" if use_flash_attention_2 else "sdpa"
 
     base_class = AutoModel._model_mapping[type(config)]

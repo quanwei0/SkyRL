@@ -285,7 +285,12 @@ def validate_cfg(cfg: SkyRLTrainConfig):
     # uniformly to every step's response tokens. This only makes sense for outcome-based estimators.
     # Temporal estimators (GAE, REINFORCE++) produce per-token advantages, which the broadcast
     # discards. Reject the combination explicitly.
-    if cfg.generator.step_wise_trajectories and cfg.trainer.algorithm.advantage_estimator in ("gae", "reinforce++"):
+    if cfg.trainer.algorithm.advantage_estimator in ("rwppo", "rwgrpo"):
+        assert cfg.trainer.algorithm.use_kl_loss is False, (
+            "RWPPO/RWGRPO does not support use_kl_loss=True"
+        )
+
+    if cfg.generator.step_wise_trajectories and cfg.trainer.algorithm.advantage_estimator in ("gae", "reinforce++", "rwppo"):
         raise ValueError(
             f"advantage_estimator={cfg.trainer.algorithm.advantage_estimator!r} is not supported with "
             f"step_wise_trajectories=True. The step-wise branch collapses each trajectory to a single "

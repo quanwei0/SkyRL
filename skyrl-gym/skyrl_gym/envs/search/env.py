@@ -1,6 +1,11 @@
 from skyrl_gym.envs.base_text_env import BaseTextEnv, BaseTextEnvStepOutput, ConversationType
 from typing import Any
 from skyrl_gym.envs.search.utils import compute_score
+from skyrl_gym.envs.search.reward import (
+    compute_answer_reward,
+    compute_format_reward,
+    compute_retrieval_reward,
+)
 from skyrl_gym.tools import SearchToolGroup
 import re
 from typing import Dict, Optional, List, Union
@@ -14,6 +19,13 @@ class SearchEnvConfig:
     search_url: str = "http://127.0.0.1:8000/retrieve"
     topk: int = 3
     timeout: int = 30
+    multi_reward: bool = False
+    answer_reward_score: float = 1.0
+    answer_reward_fail_score: float = 0.0
+    format_reward_score: float = 0.2
+    format_reward_fail_score: float = 0.0
+    retrieval_reward_score: float = 0.5
+    retrieval_reward_fail_score: float = 0.0
 
 
 class SearchEnv(BaseTextEnv):
@@ -45,6 +57,18 @@ class SearchEnv(BaseTextEnv):
         # role (user, assistant), content (tool observation or LLM response)
         self.chat_history: ConversationType = []
 
+        # Multi-reward (decomposed into answer + format + retrieval)
+        self.multi_reward = getattr(env_config, "multi_reward", False)
+        self.answer_reward_score = getattr(env_config, "answer_reward_score", 1.0)
+        self.answer_reward_fail_score = getattr(env_config, "answer_reward_fail_score", 0.0)
+        self.format_reward_score = getattr(env_config, "format_reward_score", 0.2)
+        self.format_reward_fail_score = getattr(env_config, "format_reward_fail_score", 0.0)
+        self.retrieval_reward_score = getattr(env_config, "retrieval_reward_score", 0.5)
+        self.retrieval_reward_fail_score = getattr(env_config, "retrieval_reward_fail_score", 0.0)
+        self._answer_r: float = 0.0
+        self._format_r: float = 0.0
+        self._retrieval_r: float = 0.0
+
     def _parse_action(self, action: str) -> List[Optional[str]]:
         match = None
         if "<search>" in action and "</search>" in action:
@@ -52,13 +76,39 @@ class SearchEnv(BaseTextEnv):
         return [match.group(1)] if match else [None]
 
     def _get_reward(self, action: str, done: bool) -> float:
-        if done:
-            # Concat all chat history into a single string and compute reward
-            chat_history_str = "".join([item["content"] for item in self.chat_history])
-            return compute_score(chat_history_str, self.ground_truth)
-        else:
-            # No reward for intermediate steps for Search tasks
+        if not done:
             return 0
+
+        chat_history_str = "".join([item["content"] for item in self.chat_history])
+
+        if not self.multi_reward:
+            return compute_score(chat_history_str, self.ground_truth)
+
+        self._answer_r = compute_answer_reward(
+            chat_history_str, self.ground_truth,
+            score=self.answer_reward_score,
+            fail_score=self.answer_reward_fail_score,
+        )
+        self._format_r = compute_format_reward(
+            chat_history_str,
+            score=self.format_reward_score,
+            fail_score=self.format_reward_fail_score,
+        )
+        self._retrieval_r = compute_retrieval_reward(
+            chat_history_str, self.ground_truth,
+            score=self.retrieval_reward_score,
+            fail_score=self.retrieval_reward_fail_score,
+        )
+        return self._answer_r + self._format_r + self._retrieval_r
+
+    def get_metrics(self) -> Dict[str, Any]:
+        if not self.multi_reward:
+            return {}
+        return {
+            "answer_reward": self._answer_r,
+            "format_reward": self._format_r,
+            "retrieval_reward": self._retrieval_r,
+        }
 
     def _is_done(self, action: str) -> bool:
         if self.turns >= self.max_turns:

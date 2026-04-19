@@ -218,6 +218,7 @@ def calculate_per_dataset_metrics(
         data_source_indices[data_source].append(i)
 
     # Calculate metrics for each data source
+    per_sample_env_metrics = concat_generator_outputs.get("env_metrics", None)
     for data_source, indices in data_source_indices.items():
         # Extract subset for this data source
         subset_generator_output = {
@@ -235,6 +236,16 @@ def calculate_per_dataset_metrics(
         eval_metrics[f"eval/{sanitized_data_source}/avg_score"] = overall_metrics["avg_score"]
         eval_metrics[f"eval/{sanitized_data_source}/pass_at_{n_samples_per_prompt}"] = overall_metrics["pass_at_n"]
         eval_metrics[f"eval/{sanitized_data_source}/mean_positive_reward"] = overall_metrics["mean_positive_reward"]
+
+        # Aggregate per-sample env metrics for this data source
+        if per_sample_env_metrics is not None:
+            aggregated: Dict[str, list] = {}
+            for m in [per_sample_env_metrics[i] for i in indices]:
+                for k, v in m.items():
+                    if isinstance(v, (int, float, bool)):
+                        aggregated.setdefault(k, []).append(float(v))
+            for k, vals in aggregated.items():
+                eval_metrics[f"eval/{sanitized_data_source}/{k}"] = sum(vals) / len(vals)
 
     return eval_metrics
 

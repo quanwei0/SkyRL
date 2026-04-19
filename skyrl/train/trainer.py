@@ -653,12 +653,30 @@ class RayPPOTrainer:
             ), "expected non-null rollout logprobs tensor when off_policy_correction is enabled"
             assert rollout_logprobs_tensor.shape == loss_masks_tensor.shape, "Logprobs should look like responses"
 
+        # Build multi-head reward tensor for RWPPO/RWGRPO: (B, max_response, n_reward_heads)
+        multi_rewards_tensor = None
+        if self.cfg.trainer.algorithm.advantage_estimator in ("rwppo", "rwgrpo"):
+            env_metrics = generator_output.get("env_metrics", None)
+            assert env_metrics is not None and len(env_metrics) == len(rewards), (
+                "RWPPO/RWGRPO requires env_metrics with one entry per sample; "
+                "ensure the environment implements get_metrics() returning per-component rewards."
+            )
+            reward_keys = next((list(m.keys()) for m in env_metrics if m), [])
+            assert reward_keys, "env.get_metrics() returned only empty dicts — no reward keys found."
+            eos_mask = (rewards_tensor != 0).float()  # (B, max_response): 1 at the reward placement position
+            per_head = [
+                eos_mask * torch.tensor([m.get(k, 0.0) for m in env_metrics], dtype=torch.float32).unsqueeze(-1)
+                for k in reward_keys
+            ]
+            multi_rewards_tensor = torch.stack(per_head, dim=-1)
+
         training_input = TrainingInputBatch(
             {
                 "sequences": sequences_tensor,  # Full trajectories (padded and concatenated prompts and responses)
                 "attention_mask": attention_masks_tensor,
                 "response_mask": response_masks_tensor,
                 "rewards": rewards_tensor,
+                "multi_rewards": multi_rewards_tensor,
                 "loss_mask": loss_masks_tensor,
                 "rollout_logprobs": rollout_logprobs_tensor,
                 "rollout_expert_indices": rollout_expert_indices_tensor,
@@ -809,7 +827,11 @@ class RayPPOTrainer:
             - `["advantages"]`: Float[torch.Tensor, "batch_size seqlen"]
             - `["returns"]`: Float[torch.Tensor, "batch_size seqlen"]
         """
-        token_level_rewards = data["rewards"]
+        # For RWPPO, use per-component reward tensor (B, L, n_value_heads); else use scalar rewards (B, L)
+        if self.cfg.trainer.algorithm.advantage_estimator in ("rwppo", "rwgrpo"):
+            token_level_rewards = data["multi_rewards"]
+        else:
+            token_level_rewards = data["rewards"]
 
         if self.cfg.generator.step_wise_trajectories:
             is_last_step = data["is_last_step"].bool()
@@ -869,7 +891,9 @@ class RayPPOTrainer:
         pad_size = data.metadata.get("pad_size", 0)
         num_samples = len(token_level_rewards)
 
-        return_sums = token_level_rewards.sum(dim=-1)[: num_samples - pad_size]
+        # Use scalar rewards (not multi-head) for avg_rewards metric
+        scalar_rewards = data["rewards"]
+        return_sums = scalar_rewards.sum(dim=-1)[: num_samples - pad_size]
         if self.cfg.generator.step_wise_trajectories:
             avg_rewards: float = return_sums[data["is_last_step"][: num_samples - pad_size]].mean().item()
         else:

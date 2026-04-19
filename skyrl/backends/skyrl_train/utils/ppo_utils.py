@@ -162,12 +162,20 @@ def ppo_critic_loss(
         surr1 = (values_clipped - returns) ** 2
         surr2 = (values - returns) ** 2
         loss = torch.max(surr1, surr2)
-        clipfrac = masked_mean((surr1 > surr2).float(), loss_mask).mean().detach().item()
+        # expand mask for multi-head values (B, L, n_value_heads)
+        mask_for_clip = loss_mask
+        if loss.dim() > loss_mask.dim():
+            mask_for_clip = loss_mask.unsqueeze(-1).expand_as(loss)
+        clipfrac = masked_mean((surr1 > surr2).float(), mask_for_clip).mean().detach().item()
     else:
         clipfrac = None
         loss = (values - returns) ** 2
 
-    loss = masked_mean(loss, loss_mask, dim=-1).mean()
+    # expand mask for multi-head values (B, L, n_value_heads)
+    mask_for_loss = loss_mask
+    if loss.dim() > loss_mask.dim():
+        mask_for_loss = loss_mask.unsqueeze(-1).expand_as(loss)
+    loss = masked_mean(loss, mask_for_loss, dim=-1).mean()
     return 0.5 * loss, clipfrac
 
 
@@ -406,6 +414,8 @@ class AdvantageEstimator(StrEnum):
     RLOO = "rloo"
     REINFORCE_PP = "reinforce++"
     MAXRL = "maxrl"
+    RWPPO = "rwppo"
+    RWGRPO = "rwgrpo"
 
 
 class AdvantageEstimatorRegistry(BaseFunctionRegistry):
@@ -434,6 +444,9 @@ class AdvantageEstimatorRegistry(BaseFunctionRegistry):
             "reinforce++": [AdvantageEstimator.REINFORCE_PP, compute_reinforce_plus_plus_outcome_advantage],
             "maxrl": [AdvantageEstimator.MAXRL, compute_maxrl_advantage],
         }
+
+        ae_types["rwppo"] = [AdvantageEstimator.RWPPO, compute_rwppo_advantage_return]
+        ae_types["rwgrpo"] = [AdvantageEstimator.RWGRPO, compute_rwgrpo_outcome_advantage]
 
         for ae_name, (ae_type, ae_func) in ae_types.items():
             if ae_name not in ae_avail:
@@ -1252,6 +1265,112 @@ def compute_maxrl_advantage(
             else:
                 scores[i] = scores[i] - id2mean[index[i]]
         scores = scores.unsqueeze(-1) * response_mask
+
+    return scores, scores
+
+
+@register_advantage_estimator(AdvantageEstimator.RWPPO)
+def compute_rwppo_advantage_return(
+    token_level_rewards: torch.Tensor,
+    values: torch.Tensor,
+    response_mask: torch.Tensor,
+    gamma: float,
+    lambd: float,
+    **kwargs,
+) -> Tuple[Float[torch.Tensor, "batch_size seqlen"], Float[torch.Tensor, "batch_size seqlen n_value_heads"]]:
+    """Multi-reward PPO (RWPPO) GAE with multi-head rewards and values.
+
+    Args:
+        token_level_rewards: (bs, response_length, n_value_heads)
+        values: (bs, response_length, n_value_heads)
+        response_mask: (bs, response_length)
+        gamma: discount factor
+        lambd: GAE lambda
+
+    Returns:
+        advantages: (bs, response_length) — whitened and summed across heads
+        returns: (bs, response_length, n_value_heads)
+    """
+    with torch.no_grad():
+        nextvalues = 0
+        lastgaelam = 0
+        advantages_reversed = []
+        gen_len = token_level_rewards.shape[1]
+
+        for t in reversed(range(gen_len)):
+            mask_t = response_mask[:, t].unsqueeze(-1)  # (B, 1)
+            delta = token_level_rewards[:, t] + gamma * nextvalues - values[:, t]
+            lastgaelam_ = delta + gamma * lambd * lastgaelam
+
+            nextvalues = values[:, t] * mask_t + (1 - mask_t) * nextvalues
+            lastgaelam = lastgaelam_ * mask_t + (1 - mask_t) * lastgaelam
+
+            advantages_reversed.append(lastgaelam)
+
+        advantages = torch.stack(advantages_reversed[::-1], dim=1)  # (B, L, n_value_heads)
+        returns = advantages + values  # (B, L, n_value_heads)
+
+        # whiten per head, then sum to get scalar advantage for actor
+        adv_mask = response_mask.unsqueeze(-1).expand_as(advantages)
+        advantages = masked_whiten(advantages, adv_mask)
+        advantages = advantages.sum(dim=-1) * response_mask  # (B, L)
+
+    return advantages, returns
+
+
+@register_advantage_estimator(AdvantageEstimator.RWGRPO)
+def compute_rwgrpo_outcome_advantage(
+    token_level_rewards: torch.Tensor,
+    response_mask: torch.Tensor,
+    index: np.ndarray,
+    epsilon: float = 1e-6,
+    grpo_norm_by_std: bool = True,
+    **kwargs,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Multi-reward GRPO (RWGRPO). Normalizes per reward head independently (GRPO-style),
+    sums across heads, then batch-normalizes the scalar advantage. No critic required.
+
+    Args:
+        token_level_rewards: (bs, response_length, n_reward_heads)
+        response_mask: (bs, response_length)
+        index: (np.ndarray) grouping index for GRPO normalization
+        epsilon: small value to avoid division by zero
+        grpo_norm_by_std: whether to divide by group std per head
+
+    Returns:
+        advantages: (bs, response_length)
+        returns: (bs, response_length) — same as advantages
+    """
+    scores = token_level_rewards.sum(dim=1)  # (bs, n_reward_heads)
+    n_heads = scores.shape[-1]
+
+    id2score = defaultdict(list)
+    id2mean = {}
+    id2std = {}
+
+    with torch.no_grad():
+        bsz = scores.shape[0]
+        for i in range(bsz):
+            id2score[index[i]].append(scores[i])
+        for idx in id2score:
+            if len(id2score[idx]) == 1:
+                id2mean[idx] = torch.zeros(n_heads, device=scores.device, dtype=scores.dtype)
+                id2std[idx] = torch.ones(n_heads, device=scores.device, dtype=scores.dtype)
+            elif len(id2score[idx]) > 1:
+                scores_tensor = torch.stack(id2score[idx])  # (group_size, n_reward_heads)
+                id2mean[idx] = torch.mean(scores_tensor, dim=0)
+                id2std[idx] = torch.std(scores_tensor, dim=0)
+            else:
+                raise ValueError(f"no score in prompt index: {idx}")
+        for i in range(bsz):
+            if grpo_norm_by_std:
+                scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
+            else:
+                scores[i] = scores[i] - id2mean[index[i]]
+        # sum across heads -> (bs,), then batch-normalize
+        scores = scores.sum(dim=-1)
+        scores = (scores - scores.mean()) / (scores.std() + epsilon)
+        scores = scores.unsqueeze(-1) * response_mask  # (bs, response_length)
 
     return scores, scores
 
