@@ -24,7 +24,7 @@ class SearchEnvConfig:
     answer_reward_fail_score: float = 0.0
     format_reward_score: float = 0.2
     format_reward_fail_score: float = 0.0
-    retrieval_reward_score: float = 0.5
+    retrieval_reward_score: float = 0.3
     retrieval_reward_fail_score: float = 0.0
 
 

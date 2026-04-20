@@ -1,15 +1,6 @@
 import re
 
-from skyrl_gym.envs.search.utils import normalize_answer, em_check
-
-
-def extract_solution(solution_str: str):
-    answer_pattern = r"<answer>(.*?)</answer>"
-    matches = list(re.finditer(answer_pattern, solution_str, re.DOTALL))
-    # Require at least 2 matches (system prompt echo + model output)
-    if len(matches) <= 1:
-        return None
-    return matches[-1].group(1).strip()
+from skyrl_gym.envs.search.utils import normalize_answer, em_check, extract_solution
 
 
 def extract_information_blocks(text: str) -> list[str]:
@@ -20,10 +11,7 @@ def extract_information_blocks(text: str) -> list[str]:
 
 def is_valid_sequence(text: str) -> tuple[bool, str]:
     assistant_match = re.search(r"<\|im_start\|>assistant\s*", text)
-    if not assistant_match:
-        return False, "Missing assistant marker"
-
-    content = text[assistant_match.end():]
+    content = text[assistant_match.end():] if assistant_match else text
 
     for tag in ["think", "search", "information", "answer"]:
         if len(re.findall(f"<{tag}>", content)) != len(re.findall(f"</{tag}>", content)):
