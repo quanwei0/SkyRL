@@ -10,7 +10,12 @@ SKYRL_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 mkdir -p "${LOCAL_DIR}"
 cd "${SKYRL_DIR}"
 
-# 1) Prepare dataset (uses project uv env, isolated).
+if ! command -v uv >/dev/null 2>&1; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    # shellcheck disable=SC1091
+    source "${HOME}/.local/bin/env" 2>/dev/null || export PATH="${HOME}/.local/bin:${PATH}"
+fi
+
 uv run --isolated examples/train/search/searchr1_dataset.py --local_dir "${LOCAL_DIR}"
 
 # 2) Download index with the retriever conda env.
