@@ -1,12 +1,12 @@
 set -x
 
 # Colocated RWPPO training+generation with multi-reward (answer + format + retrieval)
-# for Qwen2.5-3B-Instruct on SearchR1 data.
+# for Qwen2.5-7B on SearchR1 data.
 # Follow the instructions in docs/content/docs/recipes/searchr1.mdx for setup.
 #
 # Usage:
 #   export WANDB_API_KEY=<your_key_here>
-#   bash examples/train/search/run_search_multi_reward_rwppo.sh
+#   bash examples/train/search/run_search_multi_reward_rwppo_7b.sh
 #
 # Configurable knobs (override via env vars or command-line args):
 #   USE_CONVERSATION_MULTI_TURN - set to "true" to use conversation multi-turn format (default: false)
@@ -23,7 +23,7 @@ export WANDB_ENTITY="rl_agent"
 DATA_DIR="$HOME/data/searchR1"
 
 PROJECT_NAME="skyrl-search-rwpo"
-RUN_NAME="skyrl-search-3b-it-multi-reward-rwppo"
+RUN_NAME="skyrl-search-7b-multi-reward-rwppo"
 BASE_DIR=$HOME/experiments/$PROJECT_NAME/$RUN_NAME
 
 TIS_TYPE=token
@@ -56,8 +56,8 @@ else
   SAVE_ARGS="trainer.ckpt_interval=-1 trainer.hf_save_interval=-1 trainer.resume_mode=disable"
 fi
 
-NUM_GPUS=4
-MODEL_NAME="Qwen/Qwen2.5-3B-Instruct"
+NUM_GPUS=8
+MODEL_NAME="Qwen/Qwen2.5-7B"
 
 uv run --isolated --frozen --extra fsdp -m skyrl.train.entrypoints.main_base \
   data.train_data="['${DATA_DIR}/train.parquet']" \
