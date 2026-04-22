@@ -23,7 +23,7 @@ export WANDB_ENTITY="rl_agent"
 DATA_DIR="$HOME/data/searchR1"
 
 PROJECT_NAME="skyrl-search-rwpo"
-RUN_NAME="skyrl-search-3b-it-multi-reward-rwppo"
+RUN_NAME="skyrl-search-3b-multi-reward-rwppo"
 BASE_DIR=$HOME/experiments/$PROJECT_NAME/$RUN_NAME
 
 TIS_TYPE=token
@@ -53,11 +53,11 @@ SAVE_ARGS=""
 if [ "$SAVE" = "true" ]; then
   SAVE_ARGS="trainer.ckpt_interval=20 trainer.hf_save_interval=100 trainer.max_ckpts_to_keep=-1 trainer.resume_mode=latest trainer.ckpt_path=$BASE_DIR"
 else
-  SAVE_ARGS="trainer.ckpt_interval=-1 trainer.hf_save_interval=-1 trainer.resume_mode=disable"
+  SAVE_ARGS="trainer.ckpt_interval=-1 trainer.hf_save_interval=-1 trainer.resume_mode=null"
 fi
 
 NUM_GPUS=4
-MODEL_NAME="Qwen/Qwen2.5-3B-Instruct"
+MODEL_NAME="Qwen/Qwen2.5-3B"
 
 uv run --isolated --frozen --extra fsdp -m skyrl.train.entrypoints.main_base \
   data.train_data="['${DATA_DIR}/train.parquet']" \

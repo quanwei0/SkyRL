@@ -53,7 +53,7 @@ SAVE_ARGS=""
 if [ "$SAVE" = "true" ]; then
   SAVE_ARGS="trainer.ckpt_interval=20 trainer.hf_save_interval=100 trainer.max_ckpts_to_keep=-1 trainer.resume_mode=latest trainer.ckpt_path=$BASE_DIR"
 else
-  SAVE_ARGS="trainer.ckpt_interval=-1 trainer.hf_save_interval=-1 trainer.resume_mode=disable"
+  SAVE_ARGS="trainer.ckpt_interval=-1 trainer.hf_save_interval=-1 trainer.resume_mode=null"
 fi
 
 NUM_GPUS=4
