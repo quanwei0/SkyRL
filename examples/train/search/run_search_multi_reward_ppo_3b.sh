@@ -1,12 +1,12 @@
 set -x
 
-# Colocated RWPPO training+generation with multi-reward (answer + format + retrieval)
+# Colocated PPO training+generation with multi-reward (answer + format + retrieval)
 # for Qwen2.5-3B-Instruct on SearchR1 data.
 # Follow the instructions in docs/content/docs/recipes/searchr1.mdx for setup.
 #
 # Usage:
 #   export WANDB_API_KEY=<your_key_here>
-#   bash examples/train/search/run_search_multi_reward_rwppo_3b_it.sh
+#   bash examples/train/search/run_search_multi_reward_ppo_3b.sh
 #
 # Configurable knobs (override via env vars or command-line args):
 #   USE_CONVERSATION_MULTI_TURN - set to "true" to use conversation multi-turn format (default: false)
@@ -23,7 +23,7 @@ export WANDB_ENTITY="rl_agent"
 DATA_DIR="$HOME/data/searchR1"
 
 PROJECT_NAME="skyrl-search-rwpo"
-RUN_NAME="skyrl-search-3b-multi-reward-rwppo"
+RUN_NAME="skyrl-search-3b-it-multi-reward-ppo"
 BASE_DIR=$HOME/experiments/$PROJECT_NAME/$RUN_NAME
 
 TIS_TYPE=token
@@ -57,22 +57,21 @@ else
 fi
 
 NUM_GPUS=4
-MODEL_NAME="Qwen/Qwen2.5-3B"
+MODEL_NAME="Qwen/Qwen2.5-3B-Instruct"
 
 uv run --isolated --frozen --extra fsdp -m skyrl.train.entrypoints.main_base \
   data.train_data="['${DATA_DIR}/train.parquet']" \
   data.val_data="['${DATA_DIR}/validation.parquet']" \
-  trainer.algorithm.advantage_estimator="rwppo" \
-  trainer.algorithm.use_kl_loss=false \
-  trainer.algorithm.off_policy_correction.tis_ratio_type=$TIS_TYPE \
-  trainer.algorithm.off_policy_correction.token_tis_ratio_clip_high=$TIS_IMP_RATIO_CAP \
+  trainer.algorithm.advantage_estimator="gae" \
   trainer.policy.optimizer_config.lr=1.0e-6 \
   trainer.policy.optimizer_config.max_grad_norm=0.5 \
   trainer.policy.optimizer_config.num_warmup_steps=94 \
+  trainer.algorithm.use_kl_loss=false \
+  trainer.algorithm.off_policy_correction.tis_ratio_type=$TIS_TYPE \
+  trainer.algorithm.off_policy_correction.token_tis_ratio_clip_high=$TIS_IMP_RATIO_CAP \
   trainer.policy.model.path=${MODEL_NAME} \
   trainer.critic.model.path=${MODEL_NAME} \
   trainer.critic.optimizer_config.lr=1.0e-5 \
-  trainer.critic.model_config_kwargs.n_value_heads=3 \
   trainer.placement.colocate_all=true \
   trainer.strategy=fsdp2 \
   trainer.policy.fsdp_config.cpu_offload=true \

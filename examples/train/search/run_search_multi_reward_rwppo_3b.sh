@@ -1,12 +1,12 @@
 set -x
 
-# Colocated GRPO training+generation with multi-reward (answer + format + retrieval)
-# for Qwen2.5-7B on SearchR1 data.
+# Colocated RWPPO training+generation with multi-reward (answer + format + retrieval)
+# for Qwen2.5-3B-Instruct on SearchR1 data.
 # Follow the instructions in docs/content/docs/recipes/searchr1.mdx for setup.
 #
 # Usage:
 #   export WANDB_API_KEY=<your_key_here>
-#   bash examples/train/search/run_search_multi_reward_grpo_3b_it.sh
+#   bash examples/train/search/run_search_multi_reward_rwppo_3b.sh
 #
 # Configurable knobs (override via env vars or command-line args):
 #   USE_CONVERSATION_MULTI_TURN - set to "true" to use conversation multi-turn format (default: false)
@@ -23,7 +23,7 @@ export WANDB_ENTITY="rl_agent"
 DATA_DIR="$HOME/data/searchR1"
 
 PROJECT_NAME="skyrl-search-rwpo"
-RUN_NAME="skyrl-search-3b-it-multi-reward-grpo"
+RUN_NAME="skyrl-search-3b-multi-reward-rwppo"
 BASE_DIR=$HOME/experiments/$PROJECT_NAME/$RUN_NAME
 
 TIS_TYPE=token
@@ -57,26 +57,30 @@ else
 fi
 
 NUM_GPUS=4
-MODEL_NAME="Qwen/Qwen2.5-3B-Instruct"
+MODEL_NAME="Qwen/Qwen2.5-3B"
 
 uv run --isolated --frozen --extra fsdp -m skyrl.train.entrypoints.main_base \
   data.train_data="['${DATA_DIR}/train.parquet']" \
   data.val_data="['${DATA_DIR}/validation.parquet']" \
-  trainer.algorithm.advantage_estimator="grpo" \
+  trainer.algorithm.advantage_estimator="rwppo" \
+  trainer.algorithm.use_kl_loss=false \
+  trainer.algorithm.off_policy_correction.tis_ratio_type=$TIS_TYPE \
+  trainer.algorithm.off_policy_correction.token_tis_ratio_clip_high=$TIS_IMP_RATIO_CAP \
   trainer.policy.optimizer_config.lr=1.0e-6 \
   trainer.policy.optimizer_config.max_grad_norm=0.5 \
   trainer.policy.optimizer_config.num_warmup_steps=94 \
-  trainer.algorithm.use_kl_loss=true \
-  trainer.algorithm.kl_loss_coef=0.001 \
-  trainer.algorithm.off_policy_correction.tis_ratio_type=$TIS_TYPE \
-  trainer.algorithm.off_policy_correction.token_tis_ratio_clip_high=$TIS_IMP_RATIO_CAP \
   trainer.policy.model.path=${MODEL_NAME} \
+  trainer.critic.model.path=${MODEL_NAME} \
+  trainer.critic.optimizer_config.lr=1.0e-5 \
+  trainer.critic.model_config_kwargs.n_value_heads=3 \
   trainer.placement.colocate_all=true \
   trainer.strategy=fsdp2 \
-  trainer.policy.fsdp_config.cpu_offload=false \
+  trainer.policy.fsdp_config.cpu_offload=true \
   trainer.ref.fsdp_config.cpu_offload=true \
+  trainer.critic.fsdp_config.cpu_offload=true \
   trainer.placement.policy_num_gpus_per_node=${NUM_GPUS} \
   trainer.placement.ref_num_gpus_per_node=${NUM_GPUS} \
+  trainer.placement.critic_num_gpus_per_node=${NUM_GPUS} \
   generator.inference_engine.num_engines=${NUM_GPUS} \
   generator.inference_engine.tensor_parallel_size=1 \
   generator.inference_engine.backend=vllm \
@@ -87,6 +91,7 @@ uv run --isolated --frozen --extra fsdp -m skyrl.train.entrypoints.main_base \
   trainer.update_epochs_per_batch=1 \
   trainer.train_batch_size=512 \
   trainer.policy_mini_batch_size=256 \
+  trainer.critic_mini_batch_size=256 \
   trainer.micro_forward_batch_size_per_gpu=4 \
   trainer.micro_train_batch_size_per_gpu=4 \
   trainer.max_prompt_length=2048 \
@@ -96,7 +101,7 @@ uv run --isolated --frozen --extra fsdp -m skyrl.train.entrypoints.main_base \
   generator.batched=false \
   $MULTI_TURN_ARGS \
   $STEP_WISE_ARGS \
-  generator.n_samples_per_prompt=5 \
+  generator.n_samples_per_prompt=1 \
   generator.max_turns=4 \
   generator.sampling_params.temperature=1.0 \
   generator.sampling_params.top_p=1.0 \

@@ -31,7 +31,7 @@ TIS_IMP_RATIO_CAP=2.0
 
 : "${USE_CONVERSATION_MULTI_TURN:=false}"
 : "${STEP_WISE:=false}"
-: "${SAVE:=false}"
+: "${SAVE:=true}"
 
 MULTI_TURN_ARGS=""
 if [ "$USE_CONVERSATION_MULTI_TURN" = "true" ]; then

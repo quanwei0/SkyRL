@@ -1,12 +1,12 @@
 set -x
 
-# Colocated RWGRPO training+generation with multi-reward (answer + format + retrieval)
-# for Qwen2.5-3B-Instruct on SearchR1 data.
+# Colocated GRPO training+generation with multi-reward (answer + format + retrieval)
+# for Qwen2.5-7B on SearchR1 data.
 # Follow the instructions in docs/content/docs/recipes/searchr1.mdx for setup.
 #
 # Usage:
 #   export WANDB_API_KEY=<your_key_here>
-#   bash examples/train/search/run_search_multi_reward_rwgrpo_3b_it.sh
+#   bash examples/train/search/run_search_multi_reward_grpo_3b.sh
 #
 # Configurable knobs (override via env vars or command-line args):
 #   USE_CONVERSATION_MULTI_TURN - set to "true" to use conversation multi-turn format (default: false)
@@ -23,7 +23,7 @@ export WANDB_ENTITY="rl_agent"
 DATA_DIR="$HOME/data/searchR1"
 
 PROJECT_NAME="skyrl-search-rwpo"
-RUN_NAME="skyrl-search-3b-it-multi-reward-rwgrpo"
+RUN_NAME="skyrl-search-3b-it-multi-reward-grpo"
 BASE_DIR=$HOME/experiments/$PROJECT_NAME/$RUN_NAME
 
 TIS_TYPE=token
@@ -62,13 +62,14 @@ MODEL_NAME="Qwen/Qwen2.5-3B-Instruct"
 uv run --isolated --frozen --extra fsdp -m skyrl.train.entrypoints.main_base \
   data.train_data="['${DATA_DIR}/train.parquet']" \
   data.val_data="['${DATA_DIR}/validation.parquet']" \
-  trainer.algorithm.advantage_estimator="rwgrpo" \
-  trainer.algorithm.use_kl_loss=false \
-  trainer.algorithm.off_policy_correction.tis_ratio_type=$TIS_TYPE \
-  trainer.algorithm.off_policy_correction.token_tis_ratio_clip_high=$TIS_IMP_RATIO_CAP \
+  trainer.algorithm.advantage_estimator="grpo" \
   trainer.policy.optimizer_config.lr=1.0e-6 \
   trainer.policy.optimizer_config.max_grad_norm=0.5 \
   trainer.policy.optimizer_config.num_warmup_steps=94 \
+  trainer.algorithm.use_kl_loss=true \
+  trainer.algorithm.kl_loss_coef=0.001 \
+  trainer.algorithm.off_policy_correction.tis_ratio_type=$TIS_TYPE \
+  trainer.algorithm.off_policy_correction.token_tis_ratio_clip_high=$TIS_IMP_RATIO_CAP \
   trainer.policy.model.path=${MODEL_NAME} \
   trainer.placement.colocate_all=true \
   trainer.strategy=fsdp2 \
