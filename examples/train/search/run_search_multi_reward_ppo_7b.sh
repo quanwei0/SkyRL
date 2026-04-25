@@ -23,7 +23,7 @@ export WANDB_ENTITY="rl_agent"
 DATA_DIR="$HOME/data/searchR1"
 
 PROJECT_NAME="skyrl-search-rwpo"
-RUN_NAME="skyrl-search-7b-multi-reward-ppo"
+RUN_NAME="skyrl-search-7b-it-multi-reward-ppo"
 BASE_DIR=$HOME/experiments/$PROJECT_NAME/$RUN_NAME
 
 TIS_TYPE=token
@@ -57,7 +57,7 @@ else
 fi
 
 NUM_GPUS=8
-MODEL_NAME="Qwen/Qwen2.5-7B"
+MODEL_NAME="Qwen/Qwen2.5-7B-Instruct"
 
 uv run --isolated --frozen --extra fsdp -m skyrl.train.entrypoints.main_base \
   data.train_data="['${DATA_DIR}/train.parquet']" \
